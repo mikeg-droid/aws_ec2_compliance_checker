@@ -13,6 +13,7 @@ with different kinds of inputs in the future
 
 import boto3
 import argparse
+from botocore.config import Config
 
 # Lists for testing
 # regions = ["us-east-1","ap-southeast-1","ap-southeast-2","ap-northeast-1","eu-central-1","eu-west-1"]
@@ -25,11 +26,18 @@ parser.add_argument("--region", type=str, help="AWS region")
 args = parser.parse_args()
 regions = [args.region]
 
+#AWS configuration for retry
+config = Config(
+    retries = dict(
+        max_attempts = 10
+    )
+)
+
 #appends uncompliant security groups to list
 uncompliant_security_groups = []
 
 for region in regions:
-    ec2 = boto3.resource('ec2', region_name=region)
+    ec2 = boto3.resource('ec2', config=config, region_name=region)
 
     sgs = list(ec2.security_groups.all())
 
@@ -37,17 +45,17 @@ for region in regions:
         for rule in sg.ip_permissions:
             # Check if list of IpRanges is not empty, source ip meets conditions
             if len(rule.get('IpRanges')) > 0 and rule.get('IpRanges')[0]['CidrIp'] == '0.0.0.0/0':
-                if rule.get('FromPort') == None:
+                if not rule.get('FromPort'):
                     uncompliant_security_groups.append(sg)
 
-                if rule.get('FromPort') != None and rule.get('FromPort') < 1024 and rule.get('FromPort') != 80 and rule.get('FromPort') != 443 and rule.get('FromPort') != 22:
+                if rule.get('FromPort') and rule.get('FromPort') < 1024 and rule.get('FromPort') != 80 and rule.get('FromPort') != 443 and rule.get('FromPort') != 22:
                     uncompliant_security_groups.append(sg)
 
 #compares security groups assigned to instances to the ones in the uncompliant list
 uncompliant_ec2_list = []
 
 for region in regions:
-    ec2 = boto3.client('ec2', region_name=region)
+    ec2 = boto3.client('ec2', config=config, region_name=region)
 
     response = ec2.describe_instances()
     for reservation in response["Reservations"]:
